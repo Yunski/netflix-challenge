@@ -13,5 +13,5 @@ dependencies:
   - nltk
   - pip:
     - argparse
-    - tensorflow==1.3
+    - tensorflow-gpu==1.3
     - tqdm

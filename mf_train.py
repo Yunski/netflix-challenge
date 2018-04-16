@@ -1,59 +1,57 @@
 import os
 import time
 import numpy as np
+import scipy.sparse
 
 from sklearn.model_selection import KFold
 
 from config import cfg
 from mf import MF
-from utils import get_netflix_data, get_adj_lists
+from utils import get_netflix_data
 
 """
 Matrix Factorization Train Script
 """
 
 def train():
-    np.random.seed(424)
     logdir = os.path.join(cfg.logdir, 'mf')
     if not os.path.exists(logdir):
         os.makedirs(logdir)
 
     print("Loading data...")
-    movie_titles, _, ratings, n_users, n_items = get_netflix_data()
-    print("number of unique users: {}".format(len(np.unique(ratings[:,0]))))
-    print("number of unique movies: {}".format(len(np.unique(ratings[:,1]))))
+    movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=10000)
+    print("number of users: {}".format(n_users))
+    print("number of movies: {}".format(n_items-1))
+    ratings = scipy.sparse.dok_matrix(ratings)
 
+    method = 'als'
     print("Performing cross validation...")
-    kf = KFold(n_splits=cfg.k_folds, shuffle=True)
-    kf.get_n_splits(rating_indices)
     reg_vals = [0.01, 0.1, 1, 10]
-
     best_reg = 0
     best_loss = float('inf')
-
-    for reg in reg_vals:
-        mean_loss = 0
-        print("lambda: {}".format(reg))
-        for k, (train_index, test_index) in enumerate(kf.split(ratings)):
-            print("Fold {}".format(k))
+    n_splits = 5
+    n_features = 10
+    loss_path = np.zeros((len(reg_vals), n_splits))
+    kf = KFold(n_splits=n_splits, shuffle=True)
+    kf.get_n_splits(rating_indices)
+    for k, (train_index, test_index) in enumerate(kf.split(rating_indices)):
+        print("Fold {}".format(k))
+        train_indices, test_indices = rating_indices[train_index], rating_indices[test_index]
+        train_indices = (train_indices[:,0], train_indices[:,1])
+        test_indices = (test_indices[:,0], test_indices[:,1])
+        for i, reg in enumerate(reg_vals):
+            print("lambda: {}".format(reg))
             start = time.time()
-            data_train = ratings[train_index]
-            data_test = ratings[test_index]
-            
-            model = MF(n_users, n_items, 30, np.mean(data_train[:,2]))
-            model.fit(data_train, verbose=1)
-
-            acc, loss = model.predict(data_test)
-            print("elapsed time for fold: {}".format(time.time()-start))
+            model = MF(n_users, n_items, n_features, method=method)
+            model.fit(ratings, train_indices, verbose=1)
+            acc, loss = model.predict(ratings, test_indices, scaler)
             print("val_loss: {:.4f} - val_acc: {:.4f}".format(loss, acc))
-            mean_loss = (mean_loss*k + loss) / (k+1)
+            loss_path[i, k] = loss
 
-        if mean_loss < best_loss:
-            best_loss = mean_loss
-            best_reg = reg
-        else:
-            break
-
+    loss_means = np.mean(loss_path, axis=1)
+    print(loss_means)
+    best_reg = reg_vals[np.argmin(loss_means)]
+    best_loss = np.amin(loss_means)
     print("best lambda: {} - loss: {}".format(best_reg, best_loss))
     print("Successfully finished training MF. See logs directory.")
  

@@ -1,22 +1,22 @@
 import numpy as np
+import scipy.sparse
 
 from collections import Counter
-from sklearn.feature_selection import VarianceThreshold
-from sklearn.preprocessing import Imputer
+from sklearn.model_selection import KFold
 
-from utils import get_netflix_data, get_adj_lists, get_train_test_indices
+from utils import get_netflix_data
 
 def mean_impute(train_indices):
     users, items, ratings = train_indices
     mean_rating_by_item = {}
-    global_mean = 0
+    global_mean = 0.0
     for count, (u, i, r) in enumerate(zip(users, items, ratings)):
         global_mean = (global_mean*count + r) / (count+1)
         if i not in mean_rating_by_item:
-            mean_rating_by_item[i] = r, 1
+            mean_rating_by_item[i] = float(r), 1
         else:
             rating, n = mean_rating_by_item[i]
-            mean_rating_by_item[i] = (rating*n + r) / (n+1), n+1
+            mean_rating_by_item[i] = float(rating*n + r) / (n+1), n+1
     mean_rating_by_item = {i: mean_rating_by_item[i][0] for i in mean_rating_by_item}
     return mean_rating_by_item, global_mean
 
@@ -51,7 +51,7 @@ def mode_impute(train_indices):
     return mode_rating_by_user, global_mode
 
 
-def evaluate(test_indices, rating_by_item, global_val, acc_threshold=0.1):
+def evaluate(test_indices, rating_by_item, global_val, acc_threshold=0.3):
     users, items, ratings = test_indices
     acc, loss = 0.0, 0.0
     for n, (u, i, r) in enumerate(zip(users, items, ratings)):
@@ -60,26 +60,30 @@ def evaluate(test_indices, rating_by_item, global_val, acc_threshold=0.1):
         else:
             prediction = global_val
         res = r - prediction
-        loss += res**2
+        loss = (loss*n + res**2) / (n+1)
         acc = (acc*n + int(np.abs(res) <= acc_threshold)) / (n+1)
     return acc, np.sqrt(loss)
 
 
 def train():
     print("Loading data...")
-    movie_titles, _, rating_indices, n_users, n_items = get_netflix_data()
+    movie_titles, _, rating_indices, n_users, n_items = get_netflix_data(n_samples=1000000)
     print("number of users: {}".format(n_users))
-    print("number of movies: {}".format(n_items))
-    users_adj_list, _ = get_adj_lists(rating_indices)
- 
+    print("number of movies: {}".format(n_items-1))
+
     print("Performing cross validation...")
     strategies = ['mean', 'mode', 'median']
     n_splits = 5
+    kf = KFold(n_splits=n_splits, shuffle=True)
+    kf.get_n_splits(rating_indices)
+
     loss_path = np.zeros((len(strategies), n_splits))
     acc_path = np.zeros((len(strategies), n_splits))
-    for k in range(n_splits):
-        print("Split {}".format(k))
-        train_indices, test_indices = get_train_test_indices(users_adj_list)
+    for k, (train_index, test_index) in enumerate(kf.split(rating_indices)):
+        print("Fold {}".format(k))
+        train_indices, test_indices = rating_indices[train_index], rating_indices[test_index]
+        train_indices = (train_indices[:,0], train_indices[:,1], train_indices[:,2])
+        test_indices = (test_indices[:,0], test_indices[:,1], test_indices[:,2])
         for i, strategy in enumerate(strategies):
             print("strategy: {}".format(strategy))
             if strategy == 'mean':
@@ -101,9 +105,9 @@ def train():
     print("mean loss: {:.4f}(mean), {:.4f}(mode) {:.4f}(median)".format(mean_loss_by_strategy[0], 
                                                             mean_loss_by_strategy[1],
                                                             mean_loss_by_strategy[2]))
-    if np.argmax(mean_acc_by_strategy) == 0:
+    if np.argmin(mean_loss_by_strategy) == 0:
         print("best strategy is mean")
-    elif np.argmax(mean_acc_by_strategy) == 1:
+    elif np.argmin(mean_loss_by_strategy) == 1:
         print("best strategy is mode")
     else:
         print("best strategy is median")

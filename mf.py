@@ -3,7 +3,6 @@ import numpy as np
 
 from tqdm import tqdm
 
-from config import cfg
 from utils import get_adj_lists
 
 """
@@ -11,16 +10,20 @@ Implementation of "Matrix Factorization Techniques for Recommender Systems"
 with scikit-like api
 
 References https://lazyprogrammer.me/tutorial-on-collaborative-filtering-and-matrix-factorization-in-python/
+and https://blog.insightdatascience.com/explicit-matrix-factorization-als-sgd-and-all-that-jazz-b00e4d9b21ea
 """
 
 class MF(object):
-    def __init__(self, n_users, n_items, n_features, mu, reg=0.1, acc_threshold=0.1):
+    def __init__(self, n_users, n_items, n_features, method='sgd', learning_rate=0.01, reg=0.1, acc_threshold=0.3):
+        if method not in ['als', 'sgd']:
+            raise ValueError("method not supported: {}".format(method))
         self.name = "mf"
         self.n_users = n_users
         self.n_items = n_items
         self.n_features = n_features
+        self.method = method
+        self.learning_rate = learning_rate
         self.reg = reg
-        self.mu = mu
         self.acc_threshold = acc_threshold
         
         self._init_all_variables()
@@ -63,25 +66,44 @@ class MF(object):
             self.Q[:,i] = np.linalg.solve(X, v)
 
 
-    def fit(self, rating_indices, max_iter=20, tol=1e-2, save_model=True, verbose=0):
-        if verbose:
-            print("Building adjacency list...")
-        user_adj_list, item_adj_list = get_adj_lists(rating_indices)
+    def _als(self, user_adj_list, item_adj_list):
+        self._update_user_params(user_adj_list)            
+        self._update_item_params(item_adj_list)            
 
+        
+    def _sgd(self, ratings, train_indices):
+        user_indices, item_indices = train_indices
+        for u, i in zip(user_indices, item_indices):
+            res = ratings[u,i] - self._predict(u, i)
+            self.b_u[u] += self.learning_rate * (res - self.reg * self.b_u[u])
+            self.b_i[i] += self.learning_rate * (res - self.reg * self.b_i[i]) 
+            self.P[u,:] += self.learning_rate * (res * self.Q[:,i] - self.reg * self.P[u,:])
+            self.Q[:,i] += self.learning_rate * (res * self.P[u,:] - self.reg * self.Q[:,i])
+
+
+    def fit(self, ratings, train_indices, max_iter=100, tol=1e-4, save_model=True, verbose=0):
+        if self.method == 'als':
+            if verbose:
+                print("Building adjacency list...")
+            user_adj_list, item_adj_list = get_adj_lists(train_indices, ratings=ratings)
+        self.mu = np.mean([ratings[u,i] for u,i in zip(*train_indices)])
         cur_loss = 0
         prev_loss = 0
         
         if verbose:
-            print("Fitting with alternating least squares...")
+            print("Fitting with {}...".format(self.method))
         for i in range(max_iter): 
             print("iter {}".format(i))
-            self._update_user_params(user_adj_list)            
-            self._update_item_params(item_adj_list)            
-            acc, loss = self.eval(user_adj_list)
+            if self.method == 'als':
+                self._als(user_adj_list, item_adj_list)
+            else:
+                self._sgd(ratings, train_indices)
+
+            acc, loss = self.eval(ratings, train_indices)
             print("train_loss: {:.4f} - train_err: {:.4f} - train_acc: {:.4f}".format(loss, 1-acc, acc))
             prev_loss = cur_loss
             cur_loss = loss
-            if np.abs(loss - prev_loss) <= tol:
+            if np.abs(cur_loss - prev_loss) <= tol:
                 break
            
         if save_model:
@@ -97,23 +119,31 @@ class MF(object):
         return cur_loss
 
 
-    def predict(self, rating_indices):
-        user_adj_list, _ = get_adj_lists(rating_indices)
-        return self.eval(user_adj_list)
+    def predict(self, ratings, test_indices):
+        #user_adj_list, _ = get_adj_lists(test_indices, ratings=ratings)
+        return self.eval(ratings, test_indices)
 
 
     def _predict(self, u, i):
         return self.P[u,:].dot(self.Q[:,i]) + self.b_u[u] + self.b_i[i] + self.mu
 
 
-    def eval(self, user_adj_list):
+    def eval(self, ratings, indices):
+        user_indices, item_indices = indices
         acc, loss = 0.0, 0.0
-        n = 0
-        for u, item_ratings in user_adj_list.iteritems():
+        """
+        for n, (u, item_ratings) in enumerate(user_adj_list.iteritems()):
             for i, r in item_ratings:
                 prediction = self._predict(u, i)
-                loss += (r-prediction)**2
-                ind = int(np.abs(r-prediction) <= self.acc_threshold)
+                res = r-prediction
+                loss = (loss*n + res**2) / (n+1)
+                ind = int(np.abs(res) <= self.acc_threshold)
                 acc = (acc*n + ind) / (n+1)
-                n += 1
-        return acc, loss
+        """
+        for n, (u, i) in enumerate(zip(user_indices, item_indices)):
+            prediction = self._predict(u, i)
+            res = ratings[u,i] - prediction 
+            loss = (loss*n + res**2) / (n+1)
+            acc = (acc*n + int(np.abs(res) <= self.acc_threshold)) / (n+1) 
+
+        return acc, np.sqrt(loss)
