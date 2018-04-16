@@ -24,7 +24,7 @@ def evaluate(P, Q, test_indices, ratings, acc_threshold=0.3):
 
 def train(n_components):
     print("Loading data...")
-    movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=10000)
+    movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=1000000)
     print("number of users: {}".format(n_users))
     print("number of movies: {}".format(n_items-1))
     

@@ -71,22 +71,22 @@ class MF(object):
         self._update_item_params(item_adj_list)            
 
         
-    def _sgd(self, ratings, train_indices):
-        user_indices, item_indices = train_indices
-        for u, i in zip(user_indices, item_indices):
-            res = ratings[u,i] - self._predict(u, i)
+    def _sgd(self, train_indices):
+        user_indices, item_indices, ratings = train_indices
+        for u, i, r in zip(user_indices, item_indices, ratings):
+            res = r - self._predict(u, i)
             self.b_u[u] += self.learning_rate * (res - self.reg * self.b_u[u])
             self.b_i[i] += self.learning_rate * (res - self.reg * self.b_i[i]) 
             self.P[u,:] += self.learning_rate * (res * self.Q[:,i] - self.reg * self.P[u,:])
             self.Q[:,i] += self.learning_rate * (res * self.P[u,:] - self.reg * self.Q[:,i])
 
 
-    def fit(self, ratings, train_indices, max_iter=100, tol=1e-4, save_model=True, verbose=0):
+    def fit(self, train_indices, max_iter=100, tol=1e-4, save_model=True, verbose=0):
         if self.method == 'als':
             if verbose:
                 print("Building adjacency list...")
-            user_adj_list, item_adj_list = get_adj_lists(train_indices, ratings=ratings)
-        self.mu = np.mean([ratings[u,i] for u,i in zip(*train_indices)])
+            user_adj_list, item_adj_list = get_adj_lists(train_indices)
+        self.mu = np.mean(train_indices[2])
         cur_loss = 0
         prev_loss = 0
         
@@ -97,9 +97,9 @@ class MF(object):
             if self.method == 'als':
                 self._als(user_adj_list, item_adj_list)
             else:
-                self._sgd(ratings, train_indices)
+                self._sgd(train_indices)
 
-            acc, loss = self.eval(ratings, train_indices)
+            acc, loss = self.eval(train_indices)
             print("train_loss: {:.4f} - train_err: {:.4f} - train_acc: {:.4f}".format(loss, 1-acc, acc))
             prev_loss = cur_loss
             cur_loss = loss
@@ -119,30 +119,20 @@ class MF(object):
         return cur_loss
 
 
-    def predict(self, ratings, test_indices):
-        #user_adj_list, _ = get_adj_lists(test_indices, ratings=ratings)
-        return self.eval(ratings, test_indices)
+    def predict(self, test_indices):
+        return self.eval(test_indices)
 
 
     def _predict(self, u, i):
         return self.P[u,:].dot(self.Q[:,i]) + self.b_u[u] + self.b_i[i] + self.mu
 
 
-    def eval(self, ratings, indices):
-        user_indices, item_indices = indices
+    def eval(self, indices):
+        user_indices, item_indices, ratings = indices
         acc, loss = 0.0, 0.0
-        """
-        for n, (u, item_ratings) in enumerate(user_adj_list.iteritems()):
-            for i, r in item_ratings:
-                prediction = self._predict(u, i)
-                res = r-prediction
-                loss = (loss*n + res**2) / (n+1)
-                ind = int(np.abs(res) <= self.acc_threshold)
-                acc = (acc*n + ind) / (n+1)
-        """
-        for n, (u, i) in enumerate(zip(user_indices, item_indices)):
+        for n, (u, i, r) in enumerate(zip(user_indices, item_indices, ratings)):
             prediction = self._predict(u, i)
-            res = ratings[u,i] - prediction 
+            res = r - prediction 
             loss = (loss*n + res**2) / (n+1)
             acc = (acc*n + int(np.abs(res) <= self.acc_threshold)) / (n+1) 
 

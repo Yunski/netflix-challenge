@@ -5,7 +5,6 @@ import scipy.sparse
 
 from sklearn.model_selection import KFold
 
-from config import cfg
 from mf import MF
 from utils import get_netflix_data
 
@@ -14,7 +13,7 @@ Matrix Factorization Train Script
 """
 
 def train():
-    logdir = os.path.join(cfg.logdir, 'mf')
+    logdir = 'logs/mf/numpy'
     if not os.path.exists(logdir):
         os.makedirs(logdir)
 
@@ -22,7 +21,7 @@ def train():
     movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=10000)
     print("number of users: {}".format(n_users))
     print("number of movies: {}".format(n_items-1))
-    ratings = scipy.sparse.dok_matrix(ratings)
+    #ratings = scipy.sparse.dok_matrix(ratings)
 
     method = 'als'
     print("Performing cross validation...")
@@ -37,14 +36,14 @@ def train():
     for k, (train_index, test_index) in enumerate(kf.split(rating_indices)):
         print("Fold {}".format(k))
         train_indices, test_indices = rating_indices[train_index], rating_indices[test_index]
-        train_indices = (train_indices[:,0], train_indices[:,1])
-        test_indices = (test_indices[:,0], test_indices[:,1])
+        train_indices = (train_indices[:,0], train_indices[:,1], train_indices[:,2])
+        test_indices = (test_indices[:,0], test_indices[:,1], test_indices[:,2])
         for i, reg in enumerate(reg_vals):
             print("lambda: {}".format(reg))
             start = time.time()
             model = MF(n_users, n_items, n_features, method=method)
-            model.fit(ratings, train_indices, verbose=1)
-            acc, loss = model.predict(ratings, test_indices, scaler)
+            model.fit(train_indices, verbose=1)
+            acc, loss = model.predict(test_indices)
             print("val_loss: {:.4f} - val_acc: {:.4f}".format(loss, acc))
             loss_path[i, k] = loss
 
