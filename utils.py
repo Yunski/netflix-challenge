@@ -4,6 +4,8 @@ np.random.seed(424)
 import pandas as pd
 import scipy.sparse
 
+from sklearn.utils import shuffle
+
 def get_netflix_data(n_samples=None, data_dir='data'):
     movie_titles = pd.read_csv(os.path.join(data_dir, 'movie_titles.txt'), header=None, names=['ID','Year','Name'])
     ratings_csr = scipy.sparse.load_npz(os.path.join(data_dir, 'netflix_full_csr.npz')).T
@@ -14,6 +16,7 @@ def get_netflix_data(n_samples=None, data_dir='data'):
         n_users, n_items = ratings_csr.shape
     rating_indices = scipy.sparse.find(ratings_csr)
     rating_indices = np.column_stack(rating_indices).astype(np.int64)
+    rating_indices = shuffle(rating_indices, random_state=424)
     return movie_titles, ratings_csr, rating_indices, n_users, n_items
  
 
