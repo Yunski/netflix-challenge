@@ -107,7 +107,7 @@ class MF(object):
                 break
            
         if save_model:
-            save_path = os.path.join(cfg.logdir, self.name)
+            save_path = 'logs/mf/numpy'
             np.save(os.path.join(save_path, 'P'), self.P)
             np.save(os.path.join(save_path, 'Q'), self.Q)
             np.save(os.path.join(save_path, 'b_u'), self.b_u)

@@ -13,7 +13,8 @@ print(movie_titles.head())
 ratings_csr = scipy.sparse.load_npz('data/netflix_full_csr.npz').T
 rating_indices = scipy.sparse.find(ratings_csr)
 print(ratings_csr.shape)
-
+print("users with ratings: {}, movies with ratings: {}".format(len(np.unique(rating_indices[0])), 
+                                                               len(np.unique(rating_indices[1]))))
 print("Fitting tsvd...")
 n_components = 15
 svd = TruncatedSVD(n_components = n_components)
@@ -30,5 +31,4 @@ for n, (u, i, r) in enumerate(zip(user_indices, item_indices, ratings)):
     loss = (loss*n + res**2) / (n+1)
 
 print("loss: {:.4f}".format(np.sqrt(loss)))
-
 

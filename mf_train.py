@@ -18,10 +18,9 @@ def train():
         os.makedirs(logdir)
 
     print("Loading data...")
-    movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=10000)
-    print("number of users: {}".format(n_users))
-    print("number of movies: {}".format(n_items-1))
-    #ratings = scipy.sparse.dok_matrix(ratings)
+    movie_titles, ratings, rating_indices, n_users, n_items = get_netflix_data(n_samples=1000000)
+    print("number of users with ratings: {}".format(len(np.unique(rating_indices[:,0]))))
+    print("number of movies with ratings: {}".format(len(np.unique(rating_indices[:,1]))))
 
     method = 'als'
     print("Performing cross validation...")
@@ -29,7 +28,7 @@ def train():
     best_reg = 0
     best_loss = float('inf')
     n_splits = 5
-    n_features = 10
+    n_features = 15
     loss_path = np.zeros((len(reg_vals), n_splits))
     kf = KFold(n_splits=n_splits, shuffle=True)
     kf.get_n_splits(rating_indices)
