@@ -1,3 +1,5 @@
+import argparse
+import itertools
 import numpy as np
 import scipy.sparse
 
@@ -6,46 +8,67 @@ from sklearn.model_selection import KFold
 
 from utils import get_netflix_data
 
-def mean_impute(train_indices):
+def mean_impute(train_indices, by_user=True):
     users, items, ratings = train_indices
-    mean_rating_by_item = {}
+    mean_rating = {}
     global_mean = 0.0
-    for count, (u, i, r) in enumerate(zip(users, items, ratings)):
+    for count, (u, i, r) in enumerate(itertools.izip(users, items, ratings)):
+        if count % 100000 == 0:
+            print("imputed {} vals".format(count))
         global_mean = (global_mean*count + r) / (count+1)
-        if i not in mean_rating_by_item:
-            mean_rating_by_item[i] = float(r), 1
-        else:
-            rating, n = mean_rating_by_item[i]
-            mean_rating_by_item[i] = float(rating*n + r) / (n+1), n+1
-    mean_rating_by_item = {i: mean_rating_by_item[i][0] for i in mean_rating_by_item}
-    return mean_rating_by_item, global_mean
+        if by_user:
+            if u not in mean_rating:
+                mean_rating[u] = float(r), 1
+            else:
+                rating, n = mean_rating[u]
+                mean_rating[u] = float(rating*n + r) / (n+1), n+1
+        else: 
+            if i not in mean_rating:
+                mean_rating[i] = float(r), 1
+            else:
+                rating, n = mean_rating[i]
+                mean_rating[i] = float(rating*n + r) / (n+1), n+1
+    mean_rating = {i: mean_rating[i][0] for i in mean_rating}
+    return mean_rating, global_mean
 
 
-def median_impute(train_indices):
+def median_impute(train_indices, by_user=True):
     users, items, ratings = train_indices
-    median_rating_by_item = {}
+    median_rating = {}
     all_ratings = []
     for count, (u, i, r) in enumerate(zip(users, items, ratings)):
         all_ratings.append(r)
-        if i not in median_rating_by_item:
-            median_rating_by_item[i] = [r]
+        if by_user:
+            if u not in median_rating:
+                median_rating[u] = [r]
+            else:
+                 median_rating[u].append(r)
         else:
-            median_rating_by_item[i].append(r)
-    median_rating_by_item = {i: np.median(median_rating_by_item[i]) for i in median_rating_by_item}
+            if i not in median_rating:
+                median_rating[i] = [r]
+            else:
+                median_rating[i].append(r)
+    median_rating = {i: np.median(median_rating[i]) for i in median_rating}
     global_median = np.median(all_ratings)
-    return median_rating_by_item, global_median
+    return median_rating, global_median
 
 
-def mode_impute(train_indices):
+def mode_impute(train_indices, by_user=True):
     users, items, ratings = train_indices
     master = {}
     global_counter = Counter()
     for u, i, r in zip(users, items, ratings):
         global_counter[r] += 1
-        if i not in master:
-            master[i] = Counter({r: 1})
+        if by_user:
+            if u not in master:
+                master[u] = Counter({r: 1}) 
+            else:
+                master[u][r] += 1 
         else:
-            master[i][r] += 1
+            if i not in master:
+                master[i] = Counter({r: 1})
+            else:
+                master[i][r] += 1
     mode_rating_by_user = {i: master[i].most_common()[0][0] for i in master}
     global_mode = global_counter.most_common()[0][0]
     return mode_rating_by_user, global_mode
@@ -65,12 +88,12 @@ def evaluate(test_indices, rating_by_item, global_val, acc_threshold=0.3):
     return acc, np.sqrt(loss)
 
 
-def train():
+def train(by_user, n_samples):
     print("Loading data...")
-    movie_titles, _, rating_indices, n_users, n_items = get_netflix_data(n_samples=1000000)
+    movie_titles, _, rating_indices, n_users, n_items = get_netflix_data(n_samples=n_samples)
     print("number of users: {}".format(n_users))
     print("number of movies: {}".format(n_items-1))
-
+    print("Imputing by {}.".format("user" if by_user else "item"))
     print("Performing cross validation...")
     strategies = ['mean', 'mode', 'median']
     n_splits = 5
@@ -87,12 +110,12 @@ def train():
         for i, strategy in enumerate(strategies):
             print("strategy: {}".format(strategy))
             if strategy == 'mean':
-                rating_by_item, global_val = mean_impute(train_indices)
+                rating_imputer, global_val = mean_impute(train_indices, by_user)
             elif strategy == 'mode':
-                rating_by_item, global_val = mode_impute(train_indices)
+                rating_imputer, global_val = mode_impute(train_indices, by_user)
             else:
-                rating_by_item, global_val = median_impute(train_indices)
-            acc, loss = evaluate(test_indices, rating_by_item, global_val)
+                rating_imputer, global_val = median_impute(train_indices, by_user)
+            acc, loss = evaluate(test_indices, rating_imputer, global_val)
             print("{} - loss: {:.4f} - acc: {:.4f}".format(strategy, loss, acc))
             acc_path[i, k] = acc
             loss_path[i, k] = loss
@@ -114,4 +137,8 @@ def train():
 
     
 if __name__ == '__main__':
-    train()    
+    parser = argparse.ArgumentParser(description="Imputer")
+    parser.add_argument('-s', help='size of dataset', dest='n_samples', type=int, default=None)
+    parser.add_argument('--by_user', help='impute by user', dest='by_user', action='store_true')
+    args = parser.parse_args()
+    train(args.by_user, args.n_samples)

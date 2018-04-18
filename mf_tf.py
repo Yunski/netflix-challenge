@@ -32,11 +32,11 @@ class MF(object):
             self.ratings = tf.placeholder(tf.float32, shape=[None], name="ratings")
 
 
-    def fit(self, sess, data_indices, batch_size=None, max_iter=100, log_frequency=5, tol=1e-4, save_model=False):
+    def fit(self, sess, data_indices, batch_size=None, max_iter=50, log_frequency=1, tol=1e-4, save_model=False):
         train_indices, val_indices, test_indices = data_indices
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=0.1)
         train_op = optimizer.minimize(self.total_loss) 
-        saver = tf.train.Saver()
+        self.saver = tf.train.Saver()
         train_loss, prev_loss = 0.0, 0.0
         test_loss = 0.0
         sess.run(tf.global_variables_initializer())
@@ -117,7 +117,7 @@ class MF(object):
         print("test_loss: {:.4f} - test_acc: {:.4f}".format(test_loss, test_acc))
         
         if save_model:
-            logs_path = saver.save(sess, "logs/mf/tf/model.ckpt")
+            logs_path = self.saver.save(sess, "logs/mf/tf/model.ckpt")
             print("Model saved at {}".format(logs_path))                   
         return train_loss, test_loss
 
@@ -126,7 +126,6 @@ class MF(object):
         P = tf.squeeze(tf.nn.embedding_lookup(self.P, self.user_indices))
         Q = tf.squeeze(tf.nn.embedding_lookup(self.Q, self.item_indices))
         prediction = tf.reduce_sum(tf.multiply(P, Q), axis=1) 
-        self.prediction = tf.multiply(P, Q)
         b_u = tf.squeeze(tf.nn.embedding_lookup(self.b_u, self.user_indices))
         b_i = tf.squeeze(tf.nn.embedding_lookup(self.b_i, self.item_indices))
         prediction = self.mu + b_u + b_i + tf.squeeze(prediction)
